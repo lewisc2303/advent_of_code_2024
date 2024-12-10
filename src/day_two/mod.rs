@@ -1,111 +1,134 @@
 use std::fmt;
 
-#[derive(PartialEq, Debug)]
-pub enum Order {
-    Ascending,
-    Descending,
-    Initial,
-    None,
-    Invalid,
-}
-
-impl fmt::Display for Order {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Order::Ascending => write!(f, "Ascending"),
-            Order::Descending => write!(f, "Descending"),
-            Order::Initial => write!(f, "Initial"),
-            Order::Invalid => write!(f, "Invalid"),
-            Order::None => write!(f, "None"),
-        }
-    }
-}
-
 pub mod day_two {
-    use crate::day_two::Order;
 
-    pub fn order(last: i32, current: i32) -> Order {
-        if last < current {
-            Order::Ascending
-        } else if last > current {
-            Order::Descending
-        } else {
-            Order::Invalid
+    fn parse_report_into_vec(input: &str) -> Vec<u32> {
+        input
+            .split_whitespace()
+            .map(|num| num.parse::<u32>().unwrap())
+            .collect()
+    }
+
+    fn read_reports(input: &str) -> Vec<Vec<u32>> {
+        input
+            .lines()
+            .collect::<Vec<_>>()
+            .iter()
+            .map(|&s| parse_report_into_vec(s))
+            .collect::<Vec<_>>()
+    }
+
+    #[derive(Clone, Copy)]
+    enum Order {
+        Increasing,
+        Decreasing,
+    }
+
+    fn get_difference(prev: u32, curr: u32, direction: Order) -> Option<u32> {
+        match direction {
+            Order::Increasing => curr.checked_sub(prev),
+            Order::Decreasing => prev.checked_sub(curr),
+        }
+    }
+    fn is_safe(report: &[u32], use_dampener: bool) -> bool {
+        match use_dampener {
+            false => {
+                find_unsafe_level(report, Order::Increasing).is_none()
+                    || find_unsafe_level(report, Order::Decreasing).is_none()
+            }
+            true => {
+                is_safe_with_dampener(report, Order::Increasing)
+                    || is_safe_with_dampener(report, Order::Decreasing)
+            }
         }
     }
 
-    pub fn step_change_is_stable(last: i32, current: i32) -> bool {
-        let step_change = (last - current).abs();
-        step_change > 0 && step_change < 4
+    fn is_safe_with_dampener(report: &[u32], direction: Order) -> bool {
+        let bad_level_index = find_unsafe_level(report, direction);
+        if bad_level_index.is_none() {
+            return true;
+        }
+        let bad_level_index = bad_level_index.unwrap();
+        for possible_bad_level in
+            bad_level_index.saturating_sub(1usize)..bad_level_index.saturating_add(1usize)
+        {
+            if try_remove_level(report, possible_bad_level, direction) {
+                return true;
+            }
+        }
+        false
     }
 
-    pub fn part_two(input: Vec<Vec<i32>>) -> i32 {
-        input.iter().fold(0, |acc, record| {
-            let record_result = record
-                .iter()
-                .fold((Order::Initial, 0), |acc, current| match acc {
-                    (Order::Invalid, _) => (Order::Invalid, *current),
-                    (Order::Initial, _) => (Order::None, *current),
-                    (Order::None, last) => {
-                        if !step_change_is_stable(last, *current) {
-                            (Order::Invalid, *current)
-                        } else {
-                            (order(last, *current), *current)
-                        }
-                    }
-                    (prev_order, last) => {
-                        if !step_change_is_stable(last, *current) {
-                            (Order::Invalid, *current)
-                        } else if prev_order == order(last, *current) {
-                            (prev_order, *current)
-                        } else {
-                            (Order::Invalid, *current)
-                        }
-                    }
-                });
+    fn try_remove_level(report: &[u32], level_to_remove: usize, direction: Order) -> bool {
+        if level_to_remove >= report.len() {
+            return false;
+        }
+        let mut report = report.to_vec();
+        report.remove(level_to_remove);
+        find_unsafe_level(&report, direction).is_none()
+    }
 
-            match record_result {
-                (Order::Invalid, _) => acc,
-                _ => acc + 1,
+    fn find_unsafe_level(report: &[u32], direction: Order) -> Option<usize> {
+        let mut prev_level: Option<u32> = None;
+        for (index, level) in report.iter().enumerate() {
+            if prev_level.is_none() {
+                prev_level = Some(*level);
+                continue;
             }
-        })
+            let difference = get_difference(prev_level.unwrap(), *level, direction);
+            if difference.is_none_or(|x| !(1..=3).contains(&x)) {
+                return Some(index);
+            }
+            prev_level = Some(*level);
+        }
+        None
+    }
+
+    pub fn part_one(input: &str) -> Option<u32> {
+        let reports = read_reports(input);
+        Some(reports.iter().filter(|&v| is_safe(v, false)).count() as u32)
+    }
+
+    pub fn part_two(input: &str) -> Option<u32> {
+        let reports = read_reports(input);
+        print!("{:?}", reports.iter().len());
+        Some(reports.iter().filter(|&v| is_safe(v, true)).count() as u32)
     }
 }
 
 #[cfg(test)]
 mod tests {
 
-    use super::*;
-    use crate::day_two::day_two::{order, step_change_is_stable, part_two};
+    use crate::day_two::day_two::{part_one, part_two};
     use std::fs;
 
     #[test]
-    fn test_order() {
-        assert_eq!(order(1, 2), Order::Ascending);
-        assert_eq!(order(2, 1), Order::Descending);
-        assert_eq!(order(1, 1), Order::Invalid);
+    fn test_part_one() {
+        let input = "1 2 3
+        1 2 3
+        1 2 3";
+        assert_eq!(part_two(&input), Some(3));
     }
 
     #[test]
-    fn test_step_change_is_stable() {
-        assert_eq!(step_change_is_stable(1, 2), true);
-        assert_eq!(step_change_is_stable(1, 5), false);
+    fn answer_part_one() {
+        let input = fs::read_to_string("src/day_two/day_two_input.txt").unwrap();
+
+        assert_eq!(part_one(&input), Some(660));
     }
 
     #[test]
     fn test_part_two() {
-        let input = vec![vec![1, 2, 3], vec![1, 2, 3], vec![1, 2, 3]];
-        assert_eq!(part_two(input), 3);
+        let input = "1 2 7 8 9 
+        9 7 6 2 1
+        1 3 2 4 5";
+        assert_eq!(part_two(&input), Some(1));
     }
 
     #[test]
     fn answer_part_two() {
         let input = fs::read_to_string("src/day_two/day_two_input.txt").unwrap();
-        let input: Vec<Vec<i32>> = input
-            .lines()
-            .map(|line| line.split_whitespace().map(|x| x.parse().unwrap()).collect())
-            .collect();
-        assert_eq!(part_two(input), 660);
+        println!("{}", input.len());
+        assert_eq!(part_two(&input), Some(689));
     }
-
 }
